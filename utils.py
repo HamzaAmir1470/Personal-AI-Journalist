@@ -83,7 +83,8 @@ def extract_headlines(cleaned_text: str) -> str:
     return "\n".join(headlines)
 
 
-def summarize_with_mistral_news_script(headlines: str) -> str:
+
+def summarize_with_mistral_news_script(api_key: str, headlines: str) -> str:
     """
     Summarize multiple news headlines into a TTS-friendly broadcast news script
     using Mistral AI model via langchain_mistralai.
@@ -104,7 +105,7 @@ def summarize_with_mistral_news_script(headlines: str) -> str:
     try:
         llm = ChatMistralAI(
             model="mistral-small-latest",
-            api_key=os.getenv("MISTRAL_API_KEY"),
+            api_key=api_key,
             temperature=0.4,
             max_tokens=1000,
         )
