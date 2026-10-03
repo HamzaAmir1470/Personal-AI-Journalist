@@ -61,4 +61,4 @@ async def generate_news_audio(request: NewsRequest):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("backend:app", host="0.0.0.0", port=1234, reload=True)
+    uvicorn.run("backend:app", host="127.0.0.1", port=1234, reload=True)

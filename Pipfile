@@ -1,0 +1,25 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+ollama = "*"
+fastapi = "*"
+uvicorn = "*"
+requests = "*"
+beautifulsoup4 = "*"
+langchain-mistralai = "*"
+langchain-core = "*"
+dotenv = "*"
+elevenlabs = "*"
+six = "*"
+gtts = "*"
+aiolimiter = "*"
+langchain-mcp-adapters = "*"
+langgraph = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.14"

@@ -2,7 +2,7 @@
 import streamlit as st
 import requests
 
-BACKEND_URL = "http://localhost:8000"
+BACKEND_URL = "http://localhost:1234"  
 
 
 def main():
