@@ -18,6 +18,7 @@ gtts = "*"
 aiolimiter = "*"
 langchain-mcp-adapters = "*"
 langgraph = "*"
+scraperapi-mcp-server = "*"
 
 [dev-packages]
 

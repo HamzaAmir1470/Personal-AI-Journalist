@@ -1,18 +1,26 @@
+from datetime import datetime
 import os
+from pathlib import Path
 from urllib.parse import quote_plus
-import requests
+from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+from elevenlabs import ElevenLabs
 from fastapi import FastAPI, HTTPException
+from gtts import gTTS
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_mistralai import ChatMistralAI
-from datetime import datetime
-from elevenlabs import ElevenLabs
 import ollama
+import requests
+
+load_dotenv()
+
+# Directory setup for audio outputs
+AUDIO_DIR = Path("audio")
+AUDIO_DIR.mkdir(exist_ok=True)
 
 
 def generate_valid_news_url(keyword: str) -> str:
-    """
-    Generate a Google News search URL for a keyword
+    """Generate a Google News search URL for a keyword.
 
     Args:
         keyword: Search term to use in the news search
@@ -25,7 +33,7 @@ def generate_valid_news_url(keyword: str) -> str:
 
 
 def scrape_with_scraperapi(url: str) -> str:
-    """Scrape a URL using ScraperAPI"""
+    """Scrape a URL using ScraperAPI."""
     api_key = os.getenv("SCRAPER_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -45,15 +53,14 @@ def scrape_with_scraperapi(url: str) -> str:
 
 
 def clean_html_to_text(html_content: str) -> str:
-    """Clean HTML content to plain text"""
+    """Clean HTML content to plain text."""
     soup = BeautifulSoup(html_content, "html.parser")
     text = soup.get_text(separator="\n")
     return text.strip()
 
 
 def extract_headlines(cleaned_text: str) -> str:
-    """
-    Extract and concatenate headlines from cleaned news text content.
+    """Extract and concatenate headlines from cleaned news text content.
 
     Args:
         cleaned_text: Raw text from news page after HTML cleaning
@@ -64,30 +71,25 @@ def extract_headlines(cleaned_text: str) -> str:
     headlines = []
     current_block = []
 
-    # Split text into lines and remove empty lines
     lines = [line.strip() for line in cleaned_text.split("\n") if line.strip()]
 
-    # Process lines to find headline blocks
     for line in lines:
         if line == "More":
             if current_block:
-                # First line of block is headline
                 headlines.append(current_block[0])
                 current_block = []
-
             current_block.append(line)
         else:
             current_block.append(line)
 
-    # Add any remaining block at end of text
     if current_block:
         headlines.append(current_block[0])
 
     return "\n".join(headlines)
 
 
-def summarize_with_ollama(headlines) -> str:
-    """Summarize content using Ollama"""
+def summarize_with_ollama(headlines: str) -> str:
+    """Summarize content using Ollama."""
     prompt = f"""You are my personal news editor. Summarize these headlines into a TV news script for me, focus on important headlines and remember that this text will be converted to audio:
     So no extra stuff other than text which the podcaster/newscaster should read, no special symbols or extra information in between and of course no preamble please.
     {headlines}
@@ -96,7 +98,6 @@ def summarize_with_ollama(headlines) -> str:
     try:
         client = ollama.Client(host=os.getenv("OLLAMA_HOST", "http://localhost:11434"))
 
-        # Generate response using the Ollama client
         response = client.generate(
             model="llama3.2",
             prompt=prompt,
@@ -109,8 +110,10 @@ def summarize_with_ollama(headlines) -> str:
         raise HTTPException(status_code=500, detail=f"Ollama error: {str(e)}")
 
 
-def generate_broadcast_news(api_key, news_data, reddit_data, topics):
-    # Updated system message with flexible source handling
+def generate_broadcast_news(
+    api_key: str, news_data: dict, reddit_data: dict, topics: list
+) -> str:
+    """Generate broadcast news segment script using Mistral AI."""
     system_prompt = """
     You are broadcast_news_writer, a professional virtual news reporter. Generate natural, TTS-ready news reports using available sources:
 
@@ -134,9 +137,13 @@ def generate_broadcast_news(api_key, news_data, reddit_data, topics):
     try:
         topic_blocks = []
         for topic in topics:
-            news_content = news_data["news_analysis"].get(topic) if news_data else ""
+            news_content = (
+                news_data.get("news_analysis", {}).get(topic, "") if news_data else ""
+            )
             reddit_content = (
-                reddit_data["reddit_analysis"].get(topic) if reddit_data else ""
+                reddit_data.get("reddit_analysis", {}).get(topic, "")
+                if reddit_data
+                else ""
             )
             context = []
             if news_content:
@@ -144,7 +151,7 @@ def generate_broadcast_news(api_key, news_data, reddit_data, topics):
             if reddit_content:
                 context.append(f"REDDIT DISCUSSION CONTENT:\n{reddit_content}")
 
-            if context:  # Only include topics with actual content
+            if context:
                 topic_blocks.append(f"TOPIC: {topic}\n\n" + "\n\n".join(context))
 
         user_prompt = (
@@ -153,14 +160,17 @@ def generate_broadcast_news(api_key, news_data, reddit_data, topics):
         )
 
         llm = ChatMistralAI(
-            model="mistral-small-latest",
+            model="open-mistral-7b",
             api_key=api_key,
             temperature=0.3,
             max_tokens=1000,
         )
 
         response = llm.invoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)]
+            [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_prompt),
+            ]
         )
 
         return response.content
@@ -170,8 +180,8 @@ def generate_broadcast_news(api_key, news_data, reddit_data, topics):
 
 
 def summarize_with_mistral_news_script(api_key: str, headlines: str) -> str:
-    """
-    Summarize multiple news headlines into a TTS-friendly broadcast news script
+    """Summarize multiple news headlines into a TTS-friendly broadcast news script
+
     using Mistral AI model via langchain_mistralai.
     """
     system_prompt = """
@@ -195,13 +205,12 @@ def summarize_with_mistral_news_script(api_key: str, headlines: str) -> str:
     """
     try:
         llm = ChatMistralAI(
-            model="mistral-small-latest",
+            model="open-mistral-7b",
             api_key=api_key,
             temperature=0.4,
             max_tokens=1000,
         )
 
-        # Invoke Mistral with system + user prompt
         response = llm.invoke(
             [
                 SystemMessage(content=system_prompt),
@@ -213,7 +222,8 @@ def summarize_with_mistral_news_script(api_key: str, headlines: str) -> str:
         raise HTTPException(status_code=500, detail=f"Mistral error: {str(e)}")
 
 
-def generate_news_urls_to_scrape(list_of_keywords):
+def generate_news_urls_to_scrape(list_of_keywords: list) -> dict:
+    """Generate search URLs for a list of keywords."""
     valid_urls_dict = {}
     for keyword in list_of_keywords:
         valid_urls_dict[keyword] = generate_valid_news_url(keyword)
@@ -229,8 +239,7 @@ def text_to_audio_elevenlabs_sdk(
     output_dir: str = "audio",
     api_key: str = None,
 ) -> str:
-    """
-    Converts text to speech using ElevenLabs SDK and saves it to audio/ directory.
+    """Converts text to speech using ElevenLabs SDK and saves it to output_dir.
 
     Returns:
         str: Path to the saved audio file.
@@ -240,22 +249,20 @@ def text_to_audio_elevenlabs_sdk(
         if not api_key:
             raise ValueError("ElevenLabs API key is required.")
 
-        # Initialize client
         client = ElevenLabs(api_key=api_key)
 
-        # Get the audio generator
         audio_stream = client.text_to_speech.convert(
-            text=text, voice_id=voice_id, model_id=model_id, output_format=output_format
+            text=text,
+            voice_id=voice_id,
+            model_id=model_id,
+            output_format=output_format,
         )
 
-        # Ensure output directory exists
         os.makedirs(output_dir, exist_ok=True)
 
-        # Generate unique filename
         filename = f"tts_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mp3"
         filepath = os.path.join(output_dir, filename)
 
-        # Write audio chunks to file
         with open(filepath, "wb") as f:
             for chunk in audio_stream:
                 f.write(chunk)
@@ -266,16 +273,8 @@ def text_to_audio_elevenlabs_sdk(
         raise e
 
 
-from pathlib import Path
-from gtts import gTTS
-
-AUDIO_DIR = Path("audio")
-AUDIO_DIR.mkdir(exist_ok=True)  # Create directory if it doesn't exist
-
-
 def tts_to_audio(text: str, language: str = "en") -> str:
-    """
-    Convert text to speech using gTTS (Google Text-to-Speech) and save to file.
+    """Convert text to speech using gTTS (Google Text-to-Speech) and save to file.
 
     Args:
         text: Input text to convert
@@ -283,16 +282,11 @@ def tts_to_audio(text: str, language: str = "en") -> str:
 
     Returns:
         str: Path to saved audio file
-
-    Example:
-        tts_to_audio("Hello world", "en")
     """
     try:
-        # Generate filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = AUDIO_DIR / f"tts_{timestamp}.mp3"
 
-        # Create TTS object and save
         tts = gTTS(text=text, lang=language, slow=False)
         tts.save(str(filename))
 
