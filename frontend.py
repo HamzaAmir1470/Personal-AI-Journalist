@@ -1,8 +1,29 @@
 import html
+import asyncio
+import os
+from pathlib import Path
+
 import requests
 import streamlit as st
+from streamlit.errors import StreamlitSecretNotFoundError
 
-BACKEND_URL = "http://localhost:1234"
+from news_scrapper import NewsScraper
+from utils import generate_broadcast_news, text_to_audio_elevenlabs_sdk
+
+
+def load_streamlit_secrets():
+    """Expose Streamlit Cloud secrets to the existing service clients."""
+    try:
+        for name in ("MISTRAL_API_KEY", "SCRAPER_API_KEY", "ELEVEN_API_KEY"):
+            if not os.getenv(name) and name in st.secrets:
+                os.environ[name] = str(st.secrets[name])
+    except StreamlitSecretNotFoundError:
+        # Local development can use a .env file instead of Streamlit secrets.
+        return
+
+
+load_streamlit_secrets()
+BACKEND_URL = os.getenv("BACKEND_URL", "").rstrip("/")
 
 # ---------------------------------------------------------------------------
 # Styling & Forced Contrast Theme Setup
@@ -239,6 +260,49 @@ def handle_api_error(response):
         st.error(f"Unexpected API Response: {response.text}")
 
 
+def generate_audio_briefing(topics):
+    """Generate audio locally, or use a separately deployed backend when configured."""
+    if BACKEND_URL:
+        response = requests.post(
+            f"{BACKEND_URL}/generate-news-audio",
+            json={"topics": topics, "source_type": "news"},
+            timeout=300,
+        )
+        if response.status_code != 200:
+            handle_api_error(response)
+            return None
+        return response.content
+
+    missing_keys = [
+        name
+        for name in ("SCRAPER_API_KEY", "MISTRAL_API_KEY", "ELEVEN_API_KEY")
+        if not os.getenv(name)
+    ]
+    if missing_keys:
+        raise RuntimeError(
+            "Missing required secrets: "
+            + ", ".join(missing_keys)
+            + ". Add them to Streamlit Cloud app settings."
+        )
+
+    news_data = asyncio.run(NewsScraper().scrape_news(topics))
+    news_summary = generate_broadcast_news(
+        api_key=os.environ["MISTRAL_API_KEY"],
+        news_data=news_data,
+        reddit_data={},
+        topics=topics,
+    )
+    audio_path = text_to_audio_elevenlabs_sdk(
+        text=news_summary,
+        output_dir="audio",
+        api_key=os.environ["ELEVEN_API_KEY"],
+    )
+    audio_file = Path(audio_path)
+    if not audio_file.exists():
+        raise RuntimeError("Audio file creation failed.")
+    return audio_file.read_bytes()
+
+
 def main():
     st.set_page_config(
         page_title="Personal AI Journalist",
@@ -333,30 +397,24 @@ def main():
 
         with st.spinner("Scraping news sources and synthesizing audio..."):
             try:
-                response = requests.post(
-                    f"{BACKEND_URL}/generate-news-audio",
-                    json={
-                        "topics": topics_payload,
-                        "source_type": source_type,
-                    },
-                )
-                if response.status_code == 200:
+                audio_bytes = generate_audio_briefing(topics_payload)
+                if audio_bytes:
                     st.success("Audio news summary generated successfully!")
-                    st.audio(response.content, format="audio/mpeg")
+                    st.audio(audio_bytes, format="audio/mpeg")
                     st.download_button(
                         "Download MP3 Summary",
-                        data=response.content,
+                        data=audio_bytes,
                         file_name="news-summary.mp3",
                         type="primary",
                         use_container_width=True,
                     )
-                else:
-                    handle_api_error(response)
 
             except requests.exceptions.ConnectionError:
                 st.error(
                     f"Connection Error: Could not connect to backend at {BACKEND_URL}. Please ensure the FastAPI server is running."
                 )
+            except requests.exceptions.Timeout:
+                st.error("The backend request timed out. Please try again.")
             except Exception as e:
                 st.error(f"An unexpected error occurred: {str(e)}")
 

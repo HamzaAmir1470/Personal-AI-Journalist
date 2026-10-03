@@ -68,3 +68,27 @@ erDiagram
         datetime created_at
     }
 ```
+## Deploy on Streamlit Community Cloud
+
+1. Push this repository to GitHub and create an app at
+   [share.streamlit.io](https://share.streamlit.io/).
+2. Select `frontend.py` as the main file.
+3. Add these secrets in **App settings > Secrets**:
+
+   ```toml
+   MISTRAL_API_KEY = "your-mistral-key"
+   SCRAPER_API_KEY = "your-scraperapi-key"
+   ELEVEN_API_KEY = "your-elevenlabs-key"
+   ```
+
+The app runs the news, summarization, and audio pipeline in the Streamlit
+process, so it does not require a localhost FastAPI server. For a separately
+deployed FastAPI service, set `BACKEND_URL` as an additional secret; the UI
+will use that service instead.
+
+For local development, install dependencies with `pip install -r requirements.txt`
+and run:
+
+```bash
+streamlit run frontend.py
+```

@@ -1,0 +1,11 @@
+streamlit>=1.40,<2
+requests>=2.31,<3
+python-dotenv>=1.0,<2
+beautifulsoup4>=4.12,<5
+aiolimiter>=1.1,<2
+langchain-core>=0.3,<2
+langchain-mistralai>=0.2,<2
+elevenlabs>=1.0,<3
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+pydantic>=2.0,<3
