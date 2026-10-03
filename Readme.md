@@ -72,7 +72,7 @@ erDiagram
 
 1. Push this repository to GitHub and create an app at
    [share.streamlit.io](https://share.streamlit.io/).
-2. Select `frontend.py` as the main file.
+2. Select `streamlit_app.py` as the main file.
 3. Add these secrets in **App settings > Secrets**:
 
    ```toml
@@ -90,5 +90,5 @@ For local development, install dependencies with `pip install -r requirements.tx
 and run:
 
 ```bash
-streamlit run frontend.py
+streamlit run streamlit_app.py
 ```
