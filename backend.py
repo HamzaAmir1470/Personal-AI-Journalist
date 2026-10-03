@@ -1,13 +1,11 @@
-from fastapi import FastAPI, HTTPException, File, Response
-from fastapi.responses import FileResponse
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from fastapi import FastAPI, HTTPException, Response
 
 from models import NewsRequest
-from utils import generate_broadcast_news, text_to_audio_elevenlabs_sdk, tts_to_audio
 from news_scrapper import NewsScraper
-from reddit_scrapper import scrape_reddit_topics
+from utils import generate_broadcast_news, text_to_audio_elevenlabs_sdk
 
 app = FastAPI()
 load_dotenv()
@@ -18,15 +16,13 @@ async def generate_news_audio(request: NewsRequest):
     try:
         results = {}
 
-        if request.source_type in ["news", "both"]:
-            news_scraper = NewsScraper()
-            results["news"] = await news_scraper.scrape_news(request.topics)
-
-        if request.source_type in ["reddit", "both"]:
-            results["reddit"] = await scrape_reddit_topics(request.topics)
+        # All requests ("news", "reddit", or "both") strictly route through NewsScraper
+        news_scraper = NewsScraper()
+        results["news"] = await news_scraper.scrape_news(request.topics)
 
         news_data = results.get("news", {})
-        reddit_data = results.get("reddit", {})
+        reddit_data = {}  # Set to empty dict as reddit_scrapper is disabled
+
         news_summary = generate_broadcast_news(
             api_key=os.getenv("MISTRAL_API_KEY"),
             news_data=news_data,
@@ -53,6 +49,8 @@ async def generate_news_audio(request: NewsRequest):
                     "Content-Disposition": "attachment; filename=news-summary.mp3"
                 },
             )
+
+        raise HTTPException(status_code=500, detail="Audio file creation failed.")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
