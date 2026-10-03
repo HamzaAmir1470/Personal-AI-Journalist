@@ -289,6 +289,3 @@ erDiagram
         datetime created_at
     }
 ```
-
-package that provides the `dotenv` import used by this project. Streamlit's
-dependency resolver will install Linux-compatible transitive dependencies.
