@@ -63,8 +63,8 @@ CUSTOM_CSS = """
 
 /* ---------- Top Bar Header ---------- */
 header[data-testid="stHeader"] {
-  background-color: #FFFFFF !important;
-  border-bottom: 1px solid var(--line);
+  background-color: #0A0A0F !important;
+  border-bottom: 1px solid var(--side-line);
   height: 3.5rem;
 }
 
@@ -76,7 +76,15 @@ header[data-testid="stHeader"]::after {
   animation: edgeShift 10s linear infinite;
 }
 
-header[data-testid="stHeader"] *, [data-testid="stToolbar"] * { color: var(--ink) !important; }
+/* Force Streamlit top header buttons, icons, and menus to appear white */
+header[data-testid="stHeader"] *, 
+[data-testid="stToolbar"] *, 
+header[data-testid="stHeader"] button, 
+header[data-testid="stHeader"] svg {
+  color: #FFFFFF !important;
+  fill: #FFFFFF !important;
+  stroke: #FFFFFF !important;
+}
 
 /* ---------- Hero Banner ---------- */
 .hero {
