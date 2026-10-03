@@ -92,3 +92,15 @@ and run:
 ```bash
 streamlit run streamlit_app.py
 ```
+
+### About the `pywin32` installation error
+
+Do not deploy `Pipfile.lock` directly to Streamlit Community Cloud. That lock
+file was generated on Windows and contains `pywin32==312`, a Windows-only
+package. Streamlit Community Cloud runs Linux, so pip correctly reports that
+there is no compatible `pywin32` distribution for that environment.
+
+Use the platform-neutral `requirements.txt` file instead. The `dotenv`
+Pipfile entry is represented as `python-dotenv`, which is the maintained
+package that provides the `dotenv` import used by this project. Streamlit's
+dependency resolver will install Linux-compatible transitive dependencies.
