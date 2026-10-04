@@ -2,6 +2,7 @@ import html
 import asyncio
 import os
 from pathlib import Path
+from typing import Callable, Optional
 
 import requests
 import streamlit as st
@@ -225,6 +226,71 @@ button[kind="secondary"]:hover:not(:disabled) p {
   padding: 3px 10px; border-radius: 999px; border: 1px solid #CBD5E1;
 }
 
+/* ---------- Generation Trace ---------- */
+.generation-trace {
+  margin: 18px 0 20px;
+  padding: 18px 20px;
+  background: #F8FAFF;
+  border: 1px solid #C9D2E5;
+  border-radius: 16px;
+  box-shadow: 0 8px 22px rgba(20, 32, 54, .08);
+}
+.generation-trace-title {
+  color: #142036 !important;
+  font-size: .96rem;
+  font-weight: 800;
+  margin-bottom: 12px;
+}
+.trace-step {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 34px;
+  color: #53617A !important;
+  font-size: .92rem;
+  font-weight: 600;
+}
+.trace-step.active { color: #252B9B !important; }
+.trace-step.done { color: #147A55 !important; }
+.trace-icon {
+  display: grid;
+  place-items: center;
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: #D9E1F2;
+  color: #53617A !important;
+  font-size: .78rem;
+  font-weight: 800;
+}
+.trace-step.active .trace-icon {
+  background: #3A3FD8;
+  color: #FFFFFF !important;
+  box-shadow: 0 0 0 4px rgba(58, 63, 216, .16);
+}
+.trace-step.done .trace-icon {
+  background: #14845D;
+  color: #FFFFFF !important;
+}
+.trace-line {
+  height: 12px;
+  margin-left: 11px;
+  border-left: 2px solid #D9E1F2;
+}
+
+/* Streamlit status/spinner contrast overrides */
+[data-testid="stStatusWidget"],
+[data-testid="stStatusWidget"] summary,
+[data-testid="stStatusWidget"] div,
+[data-testid="stSpinner"] {
+  color: #142036 !important;
+}
+[data-testid="stStatusWidget"] {
+  background: #F8FAFF !important;
+  border: 1px solid #C9D2E5 !important;
+  border-radius: 16px !important;
+}
+
 /* ---------- Dark Sidebar ---------- */
 section[data-testid="stSidebar"] {
   background-color: var(--side) !important;
@@ -233,6 +299,15 @@ section[data-testid="stSidebar"] {
 section[data-testid="stSidebar"] * { color: var(--side-ink) !important; }
 section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
   background-color: var(--side-2) !important; border: 1.5px solid var(--side-line) !important; border-radius: 14px;
+}
+section[data-testid="stSidebar"] input[role="combobox"] {
+  color: #142036 !important;
+  -webkit-text-fill-color: #142036 !important;
+  background-color: transparent !important;
+}
+section[data-testid="stSidebar"] button[aria-label="Open"] svg {
+  fill: #142036 !important;
+  stroke: #142036 !important;
 }
 div[data-baseweb="popover"] > div, div[data-baseweb="popover"] ul {
   background-color: var(--side-2) !important; border: 1px solid var(--side-line) !important;
@@ -268,9 +343,16 @@ def handle_api_error(response):
         st.error(f"Unexpected API Response: {response.text}")
 
 
-def generate_audio_briefing(topics):
+def generate_audio_briefing(
+    topics: list[str], on_progress: Optional[Callable[[str], None]] = None
+):
     """Generate audio locally, or use a separately deployed backend when configured."""
+    def report(stage: str) -> None:
+        if on_progress:
+            on_progress(stage)
+
     if BACKEND_URL:
+        report("scraping")
         response = requests.post(
             f"{BACKEND_URL}/generate-news-audio",
             json={"topics": topics, "source_type": "news"},
@@ -279,6 +361,7 @@ def generate_audio_briefing(topics):
         if response.status_code != 200:
             handle_api_error(response)
             return None
+        report("audio")
         return response.content
 
     missing_keys = [
@@ -293,13 +376,16 @@ def generate_audio_briefing(topics):
             + ". Add them to Streamlit Cloud app settings."
         )
 
+    report("scraping")
     news_data = asyncio.run(NewsScraper().scrape_news(topics))
+    report("summary")
     news_summary = generate_broadcast_news(
         api_key=os.environ["MISTRAL_API_KEY"],
         news_data=news_data,
         reddit_data={},
         topics=topics,
     )
+    report("audio")
     audio_path = text_to_audio_elevenlabs_sdk(
         text=news_summary,
         output_dir="audio",
@@ -309,6 +395,31 @@ def generate_audio_briefing(topics):
     if not audio_file.exists():
         raise RuntimeError("Audio file creation failed.")
     return audio_file.read_bytes()
+
+
+def render_generation_trace(active_stage: str) -> None:
+    """Render the high-contrast progress trace for the current generation stage."""
+    stages = [
+        ("scraping", "Scraping data", "Collecting the latest stories from your selected sources"),
+        ("summary", "Generating summary", "Turning the stories into a broadcast-ready script"),
+        ("audio", "Generating audio", "Synthesizing your personalized news briefing"),
+    ]
+    active_index = next(
+        (index for index, (key, _, _) in enumerate(stages) if key == active_stage),
+        0,
+    )
+    parts = ['<div class="generation-trace"><div class="generation-trace-title">Building your briefing</div>']
+    for index, (key, title, description) in enumerate(stages):
+        state = "done" if index < active_index else "active" if index == active_index else ""
+        icon = "✓" if state == "done" else "•" if state == "active" else str(index + 1)
+        parts.append(
+            f'<div class="trace-step {state}"><span class="trace-icon">{icon}</span>'
+            f"<span>{title} <small>— {description}</small></span></div>"
+        )
+        if index < len(stages) - 1:
+            parts.append('<div class="trace-line"></div>')
+    parts.append("</div>")
+    st.markdown("".join(parts), unsafe_allow_html=True)
 
 
 def main():
@@ -402,29 +513,38 @@ def main():
         use_container_width=True,
     ):
         topics_payload = [item["name"] for item in st.session_state.topic_list]
+        trace_placeholder = st.empty()
 
-        with st.spinner("Scraping news sources and synthesizing audio..."):
-            try:
-                audio_bytes = generate_audio_briefing(topics_payload)
-                if audio_bytes:
-                    st.success("Audio news summary generated successfully!")
-                    st.audio(audio_bytes, format="audio/mpeg")
-                    st.download_button(
-                        "Download MP3 Summary",
-                        data=audio_bytes,
-                        file_name="news-summary.mp3",
-                        type="primary",
-                        use_container_width=True,
-                    )
+        def update_trace(stage: str) -> None:
+            with trace_placeholder.container():
+                render_generation_trace(stage)
 
-            except requests.exceptions.ConnectionError:
-                st.error(
-                    f"Connection Error: Could not connect to backend at {BACKEND_URL}. Please ensure the FastAPI server is running."
+        update_trace("scraping")
+        try:
+            audio_bytes = generate_audio_briefing(
+                topics_payload, on_progress=update_trace
+            )
+            if audio_bytes:
+                with trace_placeholder.container():
+                    render_generation_trace("audio")
+                st.success("Audio news summary generated successfully!")
+                st.audio(audio_bytes, format="audio/mpeg")
+                st.download_button(
+                    "Download MP3 Summary",
+                    data=audio_bytes,
+                    file_name="news-summary.mp3",
+                    type="primary",
+                    use_container_width=True,
                 )
-            except requests.exceptions.Timeout:
-                st.error("The backend request timed out. Please try again.")
-            except Exception as e:
-                st.error(f"An unexpected error occurred: {str(e)}")
+
+        except requests.exceptions.ConnectionError:
+            st.error(
+                f"Connection Error: Could not connect to backend at {BACKEND_URL}. Please ensure the FastAPI server is running."
+            )
+        except requests.exceptions.Timeout:
+            st.error("The backend request timed out. Please try again.")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {str(e)}")
 
 
 if __name__ == "__main__":
